@@ -10,6 +10,7 @@
 char * DEVICE_FILENAME = NULL;
 int BAUD_RATE = 2400;
 int FD = 0;
+unsigned char SINGLE_CONFIG_MODE = 1; //Single config sent or multiple from a file.
 
 unsigned char SEND_CONFIG[2] = {'\0','\0'};
 
@@ -60,11 +61,43 @@ int parse_input(int argc, char ** argv) {
 	return(EXIT_SUCCESS);
 }
 
+int print_sensor_input(){ //will return -1 on failure, 0 on success
+	unsigned char buffer[32];
+	int total_sensor_readings = 0;
+	int sensor_readings_read = 0;
+	int count = 0;
+	if (read(FD, buffer, 1)==-1){
+		fprintf(stderr, "Error: %s\n", strerror(errno));
+		return -1;
+	}
+	fprintf(stdout, "Sequence number received: %d\n.", buffer[0]);
+
+	if(read(FD, buffer, 1)==-1){
+		fprintf(stderr, "Error: %s\n", strerror(errno));
+		return -1;
+	}
+	fprintf(stdout, "Sensor number: %x.\n", ((buffer[0] & 0xf0)>>4));
+	total_sensor_readings = (buffer[0] & 0x0f);
+	fprintf(stdout, "Total sensor readings: %d\n.", total_sensor_readings);
+	sensor_readings_read = read(FD, buffer, total_sensor_readings * 2);
+	if(sensor_readings_read==-1){
+		fprintf(stderr, "Error: %s\n", strerror(errno));
+		return -1;
+	}
+	if(sensor_readings_read < (total_sensor_readings * 2)){
+		fprintf(stderr, "Error: %d of %d readings read.\n", sensor_readings_read, total_sensor_readings);
+		return -1;
+	}
+	for (count = 0; count < total_sensor_readings ; count++){
+		fprintf(stdout, "TIMER[%d]: %02x%02x\n.", count, buffer[2*count], buffer[2*count+1]);
+	}
+	return 0;
+}
 
 int main(int argc, char ** argv){
 	struct termios old_config, new_config;
 
-	unsigned char buffer[2048]; // Setting it more than expected maximum input length
+	unsigned char buffer[2]; 
 	int write_success = 0;
 	int read_success = 0;
 
@@ -117,6 +150,10 @@ int main(int argc, char ** argv){
 		}
 		else{
 			fprintf(stdout, "Acknowledgement received.\n");
+			if(SINGLE_CONFIG_MODE == 1){
+				if (print_sensor_input()==-1)
+					return(EXIT_FAILURE);
+			}
 		}
 	}
 
