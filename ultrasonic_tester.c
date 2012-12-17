@@ -63,6 +63,7 @@ int parse_input(int argc, char ** argv) {
 
 int main(int argc, char ** argv){
 	struct termios old_config, new_config;
+	unsigned char send_bytes[3];
 	if(parse_input(argc, argv)== EXIT_FAILURE){
 		display_help();
 		return(EXIT_FAILURE);
@@ -83,8 +84,24 @@ int main(int argc, char ** argv){
 	}
 
 	cfmakeraw(&new_config);
+	new_config.c_cc[VMIN] = 1;
 	cfsetspeed(&new_config, BAUD_RATE);
-	
+
+	//Sending config to micro controller
+	send_bytes[0] = 0x01;
+	send_bytes[1] = SEND_CONFIG[1];
+	send_bytes[2] = SEND_CONFIG[0];
+	int write_success = write(FD, send_bytes, 3);
+	if (write_success==-1)
+	{
+		fprintf(stderr, "Error: %s\n",strerror(errno));
+	}
+	else if (write_success==0){
+		fprintf(stderr, "Error: Nothing was written.\n");
+	}
+	else
+		fprintf(stdout, "%d byte(s) were written.\n", write_success);
+
 	//Before closing port.
 	tcsetattr(FD, TCSANOW, &old_config);
 	close(FD);
