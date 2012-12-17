@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
+#include <string.h>
 
 enum PARITY_TYPE {NO_PARITY=0, EVEN_PARITY, ODD_PARITY};
 
@@ -74,6 +76,10 @@ int main(int argc, char ** argv){
 		display_help();
 		return(EXIT_FAILURE);
 	}
-
+	int access_rights = access(DEVICE_FILENAME, F_OK|R_OK|W_OK);
+	if (access_rights ==-1){
+		fprintf(stderr, "Error: %s\n", strerror(errno));
+		return(EXIT_FAILURE);
+	}
 	return(EXIT_SUCCESS);
 }
