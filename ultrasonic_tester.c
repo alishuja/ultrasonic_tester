@@ -13,7 +13,7 @@ int FD = 0;
 
 unsigned char SEND_CONFIG[2] = {'\0','\0'};
 
-const char * OPT_STRING="b:c:p:h";
+const char * OPT_STRING="b:c:h";
 
 void display_help(){
 	fprintf(stdout, "USAGE: ultrasonic_tester [OPTION]... [SERIAL DEVICE FILE NAME]\n");
