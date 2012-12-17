@@ -3,11 +3,14 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <termios.h>
+#include <fcntl.h>
 
 enum PARITY_TYPE {NO_PARITY=0, EVEN_PARITY, ODD_PARITY};
 
 char * DEVICE_FILENAME = NULL;
 int BAUD_RATE = 2400;
+int FD = 0;
 
 unsigned char SEND_CONFIG[2] = {'\0','\0'};
 
@@ -72,14 +75,27 @@ int parse_input(int argc, char ** argv) {
 
 
 int main(int argc, char ** argv){
+	struct termios config;
 	if(parse_input(argc, argv)== EXIT_FAILURE){
 		display_help();
 		return(EXIT_FAILURE);
 	}
-	int access_rights = access(DEVICE_FILENAME, F_OK|R_OK|W_OK);
-	if (access_rights ==-1){
+	FD = open(DEVICE_FILENAME, O_RDWR| O_NOCTTY| O_NDELAY);
+	if (FD ==-1){
 		fprintf(stderr, "Error: %s\n", strerror(errno));
 		return(EXIT_FAILURE);
 	}
+	if (!isatty(FD)){
+		fprintf(stderr, "Error: %s\n", strerror(errno));
+		return(EXIT_FAILURE);
+	}
+	
+	if(tcgetattr(FD, &config) <0){
+		fprintf(stderr, "Error: %s\n", strerror(errno));
+		return(EXIT_FAILURE);
+	}
+
+	config.c_flag &= ~(IGNBRK | BRKINT | ICRNL | INLCR | PARMRK | INPCK | ISTRIP | IXON);
+	close(FD);
 	return(EXIT_SUCCESS);
 }
