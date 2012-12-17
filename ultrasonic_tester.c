@@ -63,12 +63,16 @@ int parse_input(int argc, char ** argv) {
 
 int main(int argc, char ** argv){
 	struct termios old_config, new_config;
-	unsigned char send_bytes[3];
+
+	unsigned char buffer[2048]; // Setting it more than expected maximum input length
+	int write_success = 0;
+	int read_success = 0;
+
 	if(parse_input(argc, argv)== EXIT_FAILURE){
 		display_help();
 		return(EXIT_FAILURE);
 	}
-	FD = open(DEVICE_FILENAME, O_RDWR| O_NOCTTY| O_NDELAY);
+	FD = open(DEVICE_FILENAME, O_RDWR);
 	if (FD ==-1){
 		fprintf(stderr, "Error: %s\n", strerror(errno));
 		return(EXIT_FAILURE);
@@ -77,7 +81,7 @@ int main(int argc, char ** argv){
 		fprintf(stderr, "Error: %s\n", strerror(errno));
 		return(EXIT_FAILURE);
 	}
-	
+
 	if(tcgetattr(FD, &old_config) <0){
 		fprintf(stderr, "Error: %s\n", strerror(errno));
 		return(EXIT_FAILURE);
@@ -88,10 +92,10 @@ int main(int argc, char ** argv){
 	cfsetspeed(&new_config, BAUD_RATE);
 
 	//Sending config to micro controller
-	send_bytes[0] = 0x01;
-	send_bytes[1] = SEND_CONFIG[1];
-	send_bytes[2] = SEND_CONFIG[0];
-	int write_success = write(FD, send_bytes, 3);
+	buffer[0] = 0x01;
+	buffer[1] = SEND_CONFIG[1];
+	buffer[2] = SEND_CONFIG[0];
+	write_success = write(FD, buffer, 3);
 	if (write_success==-1)
 	{
 		fprintf(stderr, "Error: %s\n",strerror(errno));
@@ -101,6 +105,20 @@ int main(int argc, char ** argv){
 	}
 	else
 		fprintf(stdout, "%d byte(s) were written.\n", write_success);
+
+	//Reading serial port for acknowledgement 
+	read_success = read(FD, buffer, 1);
+	if (read_success<0){
+		fprintf(stderr, "Error: %s\n", strerror(errno));
+	}
+	else{
+		if(buffer[0] != 0x12){
+			fprintf(stderr, "No acknowledgement recevied [%02x].\n", buffer[0]);
+		}
+		else{
+			fprintf(stdout, "Acknowledgement received.\n");
+		}
+	}
 
 	//Before closing port.
 	tcsetattr(FD, TCSANOW, &old_config);
