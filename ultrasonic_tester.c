@@ -56,14 +56,18 @@ int parse_input(int argc, char ** argv) {
 				}
 				BUFFER_COUNT = 0;
 				while (fscanf(file, "%x\n", &temp_input)>0){
-					BUFFER[(BUFFER_COUNT++) + 1] = (temp_input & 0xff00) >> 8;
+					BUFFER[(BUFFER_COUNT++) + 1] = (temp_input & 0xff00) >> 8;//leaving buffer[0], it will be filled later
 					BUFFER[(BUFFER_COUNT++) + 1] = (temp_input & 0xff);
 					if((BUFFER[BUFFER_COUNT-1] > 0x7F) || (BUFFER[BUFFER_COUNT] > 0x7F)){
 						fprintf(stderr, "Set each config byte between 0x00 and 0x7f.\n");
 						return(EXIT_FAILURE);
 					}
-					BUFFER[0] = BUFFER_COUNT;
 				}
+				if (BUFFER_COUNT == 0){
+					fprintf(stderr, "No config data found in the input file.\n");
+					return(EXIT_FAILURE);
+				}
+				BUFFER[0] = BUFFER_COUNT;
 				SINGLE_CONFIG_MODE = 0;
 				break;
 			case 'h':
