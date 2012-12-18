@@ -8,13 +8,17 @@
 
 
 char * DEVICE_FILENAME = NULL;
+char * INPUT_FILENAME = NULL;
 int BAUD_RATE = 2400;
 int FD = 0;
 unsigned char SINGLE_CONFIG_MODE = 1; //Single config sent or multiple from a file.
 
 unsigned char SEND_CONFIG[2] = {'\0','\0'};
 
-const char * OPT_STRING="b:c:h";
+const char * OPT_STRING="b:c:C:h";
+
+unsigned char BUFFER[40];
+int BUFFER_COUNT =0;
 
 void display_help(){
 	fprintf(stdout, "USAGE: ultrasonic_tester [OPTION]... [SERIAL DEVICE FILE NAME]\n");
@@ -26,6 +30,8 @@ void display_help(){
 int parse_input(int argc, char ** argv) {
 	int option_return=-1;
 	unsigned int temp_input = 0;
+	int count = 0;
+	FILE * file = NULL;
 	while((option_return = getopt(argc, argv, OPT_STRING)) !=-1){
 		switch(option_return){
 			case 'b':
@@ -40,6 +46,25 @@ int parse_input(int argc, char ** argv) {
 					fprintf(stderr, "Set each config byte between 0x00 and 0x7f.\n");
 					return(EXIT_FAILURE);
 				}
+				break;
+			case 'C':
+				INPUT_FILENAME=optarg;
+				file = fopen(INPUT_FILENAME,"r");
+				if (file == NULL){
+					fprintf(stderr, "Error: %s\n", strerror(errno));
+					return(EXIT_FAILURE);
+				}
+				BUFFER_COUNT = 0;
+				while (fscanf(file, "%x\n", &temp_input)>0){
+					BUFFER[(BUFFER_COUNT++) + 1] = (temp_input & 0xff00) >> 8;
+					BUFFER[(BUFFER_COUNT++) + 1] = (temp_input & 0xff);
+					if((BUFFER[BUFFER_COUNT-1] > 0x7F) || (BUFFER[BUFFER_COUNT] > 0x7F)){
+						fprintf(stderr, "Set each config byte between 0x00 and 0x7f.\n");
+						return(EXIT_FAILURE);
+					}
+					BUFFER[0] = BUFFER_COUNT;
+				}
+				SINGLE_CONFIG_MODE = 0;
 				break;
 			case 'h':
 			default:
@@ -56,30 +81,32 @@ int parse_input(int argc, char ** argv) {
 	}
 	//Displaying configuration
 	fprintf(stdout, "Baud rate: %d.\n", BAUD_RATE);
-	fprintf(stdout, "Config: 0x%02x%02x.\n",SEND_CONFIG[1], SEND_CONFIG[0]); 
-
+	if (SINGLE_CONFIG_MODE)
+		fprintf(stdout, "Config: 0x%02x%02x.\n",SEND_CONFIG[1], SEND_CONFIG[0]); 
+	else
+		fprintf(stdout, "Config file: %s.\n", INPUT_FILENAME);
+	
 	return(EXIT_SUCCESS);
 }
 
 int print_sensor_input(){ //will return -1 on failure, 0 on success
-	unsigned char buffer[32];
 	int total_sensor_readings = 0;
 	int sensor_readings_read = 0;
 	int count = 0;
-	if (read(FD, buffer, 1)==-1){
+	if (read(FD, BUFFER, 1)==-1){
 		fprintf(stderr, "Error: %s\n", strerror(errno));
 		return -1;
 	}
-	fprintf(stdout, "Sequence number received: %d\n.", buffer[0]);
+	fprintf(stdout, "Sequence number received: %d\n.", BUFFER[0]);
 
-	if(read(FD, buffer, 1)==-1){
+	if(read(FD, BUFFER, 1)==-1){
 		fprintf(stderr, "Error: %s\n", strerror(errno));
 		return -1;
 	}
-	fprintf(stdout, "Sensor number: %x.\n", ((buffer[0] & 0xf0)>>4));
-	total_sensor_readings = (buffer[0] & 0x0f);
+	fprintf(stdout, "Sensor number: %x.\n", ((BUFFER[0] & 0xf0)>>4));
+	total_sensor_readings = (BUFFER[0] & 0x0f);
 	fprintf(stdout, "Total sensor readings: %d\n.", total_sensor_readings);
-	sensor_readings_read = read(FD, buffer, total_sensor_readings * 2);
+	sensor_readings_read = read(FD, BUFFER, total_sensor_readings * 2);
 	if(sensor_readings_read==-1){
 		fprintf(stderr, "Error: %s\n", strerror(errno));
 		return -1;
@@ -89,7 +116,7 @@ int print_sensor_input(){ //will return -1 on failure, 0 on success
 		return -1;
 	}
 	for (count = 0; count < total_sensor_readings ; count++){
-		fprintf(stdout, "TIMER[%d]: %02x%02x\n.", count, buffer[2*count], buffer[2*count+1]);
+		fprintf(stdout, "TIMER[%d]: %02x%02x\n.", count, BUFFER[2*count], BUFFER[2*count+1]);
 	}
 	return 0;
 }
@@ -97,7 +124,6 @@ int print_sensor_input(){ //will return -1 on failure, 0 on success
 int main(int argc, char ** argv){
 	struct termios old_config, new_config;
 
-	unsigned char buffer[2]; 
 	int write_success = 0;
 	int read_success = 0;
 
@@ -126,10 +152,19 @@ int main(int argc, char ** argv){
 
 	if (SINGLE_CONFIG_MODE == 1){
 		//Sending config to micro controller
-		buffer[0] = 0x01;
-		buffer[1] = SEND_CONFIG[1];
-		buffer[2] = SEND_CONFIG[0];
-		write_success = write(FD, buffer, 3);
+		BUFFER[0] = 0x01;
+		BUFFER[1] = SEND_CONFIG[1];
+		BUFFER[2] = SEND_CONFIG[0];
+		write_success = write(FD, BUFFER, 3);
+	}
+	else{
+		fprintf(stdout, "Config sent: ");
+		int count = 0;
+		for (count = 0; count < (BUFFER[0]+1); count++){
+			fprintf(stdout, "0x%02x ", BUFFER[count]);
+		}
+		fprintf(stdout, "\n");
+		write_success = write(FD, BUFFER, BUFFER[0]+1);
 	}
 	if (write_success==-1)
 	{
@@ -142,13 +177,13 @@ int main(int argc, char ** argv){
 		fprintf(stdout, "%d byte(s) were written.\n", write_success);
 
 	//Reading serial port for acknowledgement 
-	read_success = read(FD, buffer, 1);
+	read_success = read(FD, BUFFER, 1);
 	if (read_success<0){
 		fprintf(stderr, "Error: %s\n", strerror(errno));
 	}
 	else{
-		if(buffer[0] != 0x12){
-			fprintf(stderr, "No acknowledgement recevied [%02x].\n", buffer[0]);
+		if(BUFFER[0] != 0x12){
+			fprintf(stderr, "No acknowledgement recevied [%02x].\n", BUFFER[0]);
 		}
 		else{
 			fprintf(stdout, "Acknowledgement received.\n");
