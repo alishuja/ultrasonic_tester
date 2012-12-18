@@ -24,6 +24,7 @@ void display_help(){
 	fprintf(stdout, "USAGE: ultrasonic_tester [OPTION]... [SERIAL DEVICE FILE NAME]\n");
 	fprintf(stdout, "\t-b BAUDRATE\t Set the baudrate.\n");
 	fprintf(stdout, "\t-c CONFIG\t Set the configuration in HEX format.\n");
+	fprintf(stdout, "\t-C FILE\t\t Set the configuration input file.\n");
 	fprintf(stdout, "\t-h\t\t Display this message.\n");
 }
 
