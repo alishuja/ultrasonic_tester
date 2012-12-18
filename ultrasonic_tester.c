@@ -124,11 +124,13 @@ int main(int argc, char ** argv){
 	new_config.c_cc[VMIN] = 1;
 	cfsetspeed(&new_config, BAUD_RATE);
 
-	//Sending config to micro controller
-	buffer[0] = 0x01;
-	buffer[1] = SEND_CONFIG[1];
-	buffer[2] = SEND_CONFIG[0];
-	write_success = write(FD, buffer, 3);
+	if (SINGLE_CONFIG_MODE == 1){
+		//Sending config to micro controller
+		buffer[0] = 0x01;
+		buffer[1] = SEND_CONFIG[1];
+		buffer[2] = SEND_CONFIG[0];
+		write_success = write(FD, buffer, 3);
+	}
 	if (write_success==-1)
 	{
 		fprintf(stderr, "Error: %s\n",strerror(errno));
