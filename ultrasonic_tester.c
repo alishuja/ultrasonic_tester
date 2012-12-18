@@ -19,6 +19,7 @@ const char * OPT_STRING="b:c:C:h";
 
 unsigned char BUFFER[40];
 int BUFFER_COUNT =0;
+int TOTAL_CONFIG = 0;
 
 void display_help(){
 	fprintf(stdout, "USAGE: ultrasonic_tester [OPTION]... [SERIAL DEVICE FILE NAME]\n");
@@ -57,8 +58,8 @@ int parse_input(int argc, char ** argv) {
 				}
 				BUFFER_COUNT = 0;
 				while (fscanf(file, "%x\n", &temp_input)>0){
-					BUFFER[(BUFFER_COUNT++) + 1] = (temp_input & 0xff00) >> 8;//leaving buffer[0], it will be filled later
-					BUFFER[(BUFFER_COUNT++) + 1] = (temp_input & 0xff);
+					BUFFER[(BUFFER_COUNT++) + 1] = (unsigned char)((temp_input & 0xff00) >> 8);//leaving buffer[0], it will be filled later
+					BUFFER[(BUFFER_COUNT++) + 1] = (unsigned char)(temp_input & 0xff);
 					if((BUFFER[BUFFER_COUNT-1] > 0x7F) || (BUFFER[BUFFER_COUNT] > 0x7F)){
 						fprintf(stderr, "Set each config byte between 0x00 and 0x7f.\n");
 						return(EXIT_FAILURE);
@@ -68,8 +69,9 @@ int parse_input(int argc, char ** argv) {
 					fprintf(stderr, "No config data found in the input file.\n");
 					return(EXIT_FAILURE);
 				}
-				BUFFER[0] = BUFFER_COUNT;
+				BUFFER[0] = BUFFER_COUNT/2;
 				SINGLE_CONFIG_MODE = 0;
+				TOTAL_CONFIG = BUFFER[0];
 				break;
 			case 'h':
 			default:
@@ -90,7 +92,7 @@ int parse_input(int argc, char ** argv) {
 		fprintf(stdout, "Config: 0x%02x%02x.\n",SEND_CONFIG[1], SEND_CONFIG[0]); 
 	else
 		fprintf(stdout, "Config file: %s.\n", INPUT_FILENAME);
-	
+
 	return(EXIT_SUCCESS);
 }
 
@@ -103,25 +105,27 @@ int print_sensor_input(){ //will return -1 on failure, 0 on success
 		return -1;
 	}
 	fprintf(stdout, "Sequence number received: %d\n.", BUFFER[0]);
-
-	if(read(FD, BUFFER, 1)==-1){
-		fprintf(stderr, "Error: %s\n", strerror(errno));
-		return -1;
-	}
-	fprintf(stdout, "Sensor number: %x.\n", ((BUFFER[0] & 0xf0)>>4));
-	total_sensor_readings = (BUFFER[0] & 0x0f);
-	fprintf(stdout, "Total sensor readings: %d\n.", total_sensor_readings);
-	sensor_readings_read = read(FD, BUFFER, total_sensor_readings * 2);
-	if(sensor_readings_read==-1){
-		fprintf(stderr, "Error: %s\n", strerror(errno));
-		return -1;
-	}
-	if(sensor_readings_read < (total_sensor_readings * 2)){
-		fprintf(stderr, "Error: %d of %d readings read.\n", sensor_readings_read, total_sensor_readings);
-		return -1;
-	}
-	for (count = 0; count < total_sensor_readings ; count++){
-		fprintf(stdout, "TIMER[%d]: %02x%02x\n.", count, BUFFER[2*count], BUFFER[2*count+1]);
+	int i = 0;
+	for (; i<14; i++){ //For all 14 sensors
+		if(read(FD, BUFFER, 1)==-1){
+			fprintf(stderr, "Error: %s\n", strerror(errno));
+			return -1;
+		}
+		fprintf(stdout, "Sensor number: %x.\n", ((BUFFER[0] & 0xf0)>>4));
+		total_sensor_readings = (BUFFER[0] & 0x0f);
+		fprintf(stdout, "Total sensor readings: %d\n.", total_sensor_readings);
+		sensor_readings_read = read(FD, BUFFER, total_sensor_readings * 2);
+		if(sensor_readings_read==-1){
+			fprintf(stderr, "Error: %s\n", strerror(errno));
+			return -1;
+		}
+		if(sensor_readings_read < (total_sensor_readings * 2)){
+			fprintf(stderr, "Error: %d of %d readings read.\n", sensor_readings_read, total_sensor_readings);
+			return -1;
+		}
+		for (count = 0; count < total_sensor_readings ; count++){
+			fprintf(stdout, "TIMER[%d]: %02x%02x\n.", count, BUFFER[2*count], BUFFER[2*count+1]);
+		}
 	}
 	return 0;
 }
@@ -165,11 +169,11 @@ int main(int argc, char ** argv){
 	else{
 		fprintf(stdout, "Config sent: ");
 		int count = 0;
-		for (count = 0; count < (BUFFER[0]+1); count++){
+		for (count = 0; count < (BUFFER_COUNT+1); count++){
 			fprintf(stdout, "0x%02x ", BUFFER[count]);
 		}
 		fprintf(stdout, "\n");
-		write_success = write(FD, BUFFER, BUFFER[0]+1);
+		write_success = write(FD, BUFFER, BUFFER_COUNT+1);
 	}
 	if (write_success==-1)
 	{
@@ -195,6 +199,14 @@ int main(int argc, char ** argv){
 			if(SINGLE_CONFIG_MODE == 1){
 				if (print_sensor_input()==-1)
 					return(EXIT_FAILURE);
+			}
+			else{
+				int count= 0;
+				for(count = 0; count <TOTAL_CONFIG; count++){
+					if(print_sensor_input()==-1)
+						return(EXIT_FAILURE);
+				}
+
 			}
 		}
 	}
