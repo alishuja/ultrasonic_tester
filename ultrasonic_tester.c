@@ -7,6 +7,10 @@
 #include <fcntl.h>
 #include <signal.h>
 
+#define F_CPU 2304000
+#define TIMER_PRESCALER 8
+#define SPEED_OF_SOUND 340.29 //(m/s)
+
 char * DEVICE_FILENAME = NULL;
 char * INPUT_FILENAME = NULL;
 int BAUD_RATE = 2400;
@@ -104,10 +108,19 @@ int parse_input(int argc, char ** argv) {
 	return(EXIT_SUCCESS);
 }
 
+float get_time(int timer_value){
+	return (((float)(TIMER_PRESCALER)/(float)(F_CPU)) * timer_value);
+}
+
+float get_distance(float fall_time, float base_time){
+	return ((fall_time-base_time)/2* SPEED_OF_SOUND);
+}
 int print_sensor_input(){ //will return -1 on failure, 0 on success
 	int total_sensor_readings = 0;
 	int sensor_readings_read = 0;
 	int count = 0;
+	int base_value=0;
+	int temp_reading = 0;
 	if (read(FD, BUFFER, 1)==-1){
 		fprintf(stderr, "Error: %s\n", strerror(errno));
 		return -1;
@@ -123,7 +136,7 @@ int print_sensor_input(){ //will return -1 on failure, 0 on success
 		total_sensor_readings = (BUFFER[0] & 0x0f);
 		fprintf(stdout, "Total sensor readings: %d\n", total_sensor_readings);
 		sensor_readings_read = 0;
-		while(sensor_readings_read <(total_sensor_readings*2)){
+		while(sensor_readings_read <(total_sensor_readings*2)){ //experimental, since it has no error detection.
 			read(FD, BUFFER+sensor_readings_read, 1);
 			sensor_readings_read++;
 		}
@@ -136,7 +149,19 @@ int print_sensor_input(){ //will return -1 on failure, 0 on success
 			return -1;
 		} */
 		for (count = 0; count < total_sensor_readings ; count++){
-			fprintf(stdout, "TIMER[%d]: 0x%02x%02x\n", count, BUFFER[2*count], BUFFER[2*count+1]);
+			fprintf(stdout, "TIMER[%d]: 0x%02x%02x", count, BUFFER[2*count], BUFFER[2*count+1]);
+			if (count == 0){
+				base_value= 0;
+				base_value |= (BUFFER[2*count] <<8);
+				base_value |= BUFFER[2*count+1];
+				fprintf(stdout, ", setting the base timer value: %fms\n", get_time(base_value)*1000);
+			}
+			else{
+				temp_reading = 0;
+				temp_reading = BUFFER[2*count] << 8;
+				temp_reading |= BUFFER[2*count+1];
+				fprintf(stdout, ", time: %fms, distance: %fm\n",get_time(temp_reading)*1000, get_distance(get_time(temp_reading), get_time(base_value)));
+			}
 		}
 	}
 	return 0;
