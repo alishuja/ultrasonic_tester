@@ -19,18 +19,22 @@ unsigned char SINGLE_CONFIG_MODE = 1; //Single config sent or multiple from a fi
 
 unsigned char SEND_CONFIG[2] = {'\0','\0'};
 
-const char * OPT_STRING="b:c:C:h";
+const char * OPT_STRING="b:c:C:fh";
 
 unsigned char BUFFER[40];
 int BUFFER_COUNT =0;
 int TOTAL_CONFIG = 0;
+
 struct termios old_config, new_config;
+
+unsigned char READ_UNTIL_SIGINT = 0;
 
 void display_help(){
 	fprintf(stdout, "USAGE: ultrasonic_tester [OPTION]... [SERIAL DEVICE FILE NAME]\n");
 	fprintf(stdout, "\t-b BAUDRATE\t Set the baudrate.\n");
 	fprintf(stdout, "\t-c CONFIG\t Set the configuration in HEX format.\n");
 	fprintf(stdout, "\t-C FILE\t\t Set the configuration input file.\n");
+	fprintf(stdout, "\t-f\t\t Read until SIGINT received.\n");
 	fprintf(stdout, "\t-h\t\t Display this message.\n");
 }
 void closeFD(int signo){
@@ -84,6 +88,9 @@ int parse_input(int argc, char ** argv) {
 				SINGLE_CONFIG_MODE = 0;
 				TOTAL_CONFIG = BUFFER[0];
 				fclose(file);
+				break;
+			case 'f':
+				READ_UNTIL_SIGINT = 1;
 				break;
 			case 'h':
 			default:
@@ -140,14 +147,14 @@ int print_sensor_input(){ //will return -1 on failure, 0 on success
 			read(FD, BUFFER+sensor_readings_read, 1);
 			sensor_readings_read++;
 		}
-	/*	if(sensor_readings_read==-1){
+		/*	if(sensor_readings_read==-1){
 			fprintf(stderr, "Error: %s\n", strerror(errno));
 			return -1;
-		}
-		if(sensor_readings_read < (total_sensor_readings * 2)){
+			}
+			if(sensor_readings_read < (total_sensor_readings * 2)){
 			fprintf(stderr, "Error: %d of %d reading read.\n", sensor_readings_read, total_sensor_readings * 2);
 			return -1;
-		} */
+			} */
 		for (count = 0; count < total_sensor_readings ; count++){
 			fprintf(stdout, "TIMER[%d]: 0x%02x%02x", count, BUFFER[2*count], BUFFER[2*count+1]);
 			if (count == 0){
@@ -198,9 +205,9 @@ int main(int argc, char ** argv){
 	new_config.c_cc[VTIME] = 0;
 
 	tcsetattr(FD, TCSANOW | TCIOFLUSH, &new_config);
-//	sleep(2);
-//	tcflush(FD, TCIOFLUSH);
-//	sleep(2);
+	//	sleep(2);
+	//	tcflush(FD, TCIOFLUSH);
+	//	sleep(2);
 	if (SINGLE_CONFIG_MODE == 1){
 		//Sending config to micro controller
 		BUFFER[0] = 0x01;
@@ -240,15 +247,19 @@ int main(int argc, char ** argv){
 		else{
 			fprintf(stdout, "Acknowledgement received.\n");
 			if(SINGLE_CONFIG_MODE == 1){
-				if (print_sensor_input()==-1)
-					return(EXIT_FAILURE);
+				do{
+					if (print_sensor_input()==-1)
+						return(EXIT_FAILURE);
+				}while(READ_UNTIL_SIGINT);
 			}
 			else{
 				int count= 0;
-				for(count = 0; count <TOTAL_CONFIG; count++){
-					if(print_sensor_input()==-1)
-						return(EXIT_FAILURE);
-				}
+				do{
+					for(count = 0; count <TOTAL_CONFIG; count++){
+						if(print_sensor_input()==-1)
+							return(EXIT_FAILURE);
+					}
+				}while(READ_UNTIL_SIGINT);
 
 			}
 		}
