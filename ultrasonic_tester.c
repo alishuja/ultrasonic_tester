@@ -5,7 +5,7 @@
 #include <string.h>
 #include <termios.h>
 #include <fcntl.h>
-
+#include <signal.h>
 
 char * DEVICE_FILENAME = NULL;
 char * INPUT_FILENAME = NULL;
@@ -20,6 +20,7 @@ const char * OPT_STRING="b:c:C:h";
 unsigned char BUFFER[40];
 int BUFFER_COUNT =0;
 int TOTAL_CONFIG = 0;
+struct termios old_config, new_config;
 
 void display_help(){
 	fprintf(stdout, "USAGE: ultrasonic_tester [OPTION]... [SERIAL DEVICE FILE NAME]\n");
@@ -27,6 +28,12 @@ void display_help(){
 	fprintf(stdout, "\t-c CONFIG\t Set the configuration in HEX format.\n");
 	fprintf(stdout, "\t-C FILE\t\t Set the configuration input file.\n");
 	fprintf(stdout, "\t-h\t\t Display this message.\n");
+}
+void closeFD(int signo){
+	fprintf(stdout, "Closing FD\n");
+	tcsetattr(FD, TCSANOW, &old_config);
+	close(FD);
+	exit(EXIT_FAILURE);
 }
 
 int parse_input(int argc, char ** argv) {
@@ -38,7 +45,7 @@ int parse_input(int argc, char ** argv) {
 		switch(option_return){
 			case 'b':
 				sscanf(optarg,"%d", &BAUD_RATE);
-				fprintf(stdout, "Baud Rate Set: %d.\n", BAUD_RATE);
+				fprintf(stdout, "Baud Rate Set: %d\n", BAUD_RATE);
 				break;
 			case 'c':
 				sscanf(optarg, "%x", &temp_input);
@@ -72,6 +79,7 @@ int parse_input(int argc, char ** argv) {
 				BUFFER[0] = BUFFER_COUNT/2;
 				SINGLE_CONFIG_MODE = 0;
 				TOTAL_CONFIG = BUFFER[0];
+				fclose(file);
 				break;
 			case 'h':
 			default:
@@ -84,14 +92,14 @@ int parse_input(int argc, char ** argv) {
 	}
 	else{
 		DEVICE_FILENAME = argv[optind];
-		fprintf(stdout, "Device Filename: [%s].\n", DEVICE_FILENAME);
+		fprintf(stdout, "Device Filename: [%s]\n", DEVICE_FILENAME);
 	}
 	//Displaying configuration
-	fprintf(stdout, "Baud rate: %d.\n", BAUD_RATE);
+	fprintf(stdout, "Baud rate: %d\n", BAUD_RATE);
 	if (SINGLE_CONFIG_MODE)
-		fprintf(stdout, "Config: 0x%02x%02x.\n",SEND_CONFIG[1], SEND_CONFIG[0]); 
+		fprintf(stdout, "Config: 0x%02x%02x\n",SEND_CONFIG[1], SEND_CONFIG[0]); 
 	else
-		fprintf(stdout, "Config file: %s.\n", INPUT_FILENAME);
+		fprintf(stdout, "Config file: %s\n", INPUT_FILENAME);
 
 	return(EXIT_SUCCESS);
 }
@@ -104,34 +112,37 @@ int print_sensor_input(){ //will return -1 on failure, 0 on success
 		fprintf(stderr, "Error: %s\n", strerror(errno));
 		return -1;
 	}
-	fprintf(stdout, "Sequence number received: %d\n.", BUFFER[0]);
+	fprintf(stdout, "Sequence number received: %d\n", BUFFER[0]);
 	int i = 0;
 	for (; i<14; i++){ //For all 14 sensors
 		if(read(FD, BUFFER, 1)==-1){
 			fprintf(stderr, "Error: %s\n", strerror(errno));
 			return -1;
 		}
-		fprintf(stdout, "Sensor number: %x.\n", ((BUFFER[0] & 0xf0)>>4));
+		fprintf(stdout, "Sensor number: %x\n", ((BUFFER[0] & 0xf0)>>4));
 		total_sensor_readings = (BUFFER[0] & 0x0f);
-		fprintf(stdout, "Total sensor readings: %d\n.", total_sensor_readings);
-		sensor_readings_read = read(FD, BUFFER, total_sensor_readings * 2);
-		if(sensor_readings_read==-1){
+		fprintf(stdout, "Total sensor readings: %d\n", total_sensor_readings);
+		sensor_readings_read = 0;
+		while(sensor_readings_read <(total_sensor_readings*2)){
+			read(FD, BUFFER+sensor_readings_read, 1);
+			sensor_readings_read++;
+		}
+	/*	if(sensor_readings_read==-1){
 			fprintf(stderr, "Error: %s\n", strerror(errno));
 			return -1;
 		}
 		if(sensor_readings_read < (total_sensor_readings * 2)){
-			fprintf(stderr, "Error: %d of %d readings read.\n", sensor_readings_read, total_sensor_readings);
+			fprintf(stderr, "Error: %d of %d reading read.\n", sensor_readings_read, total_sensor_readings * 2);
 			return -1;
-		}
+		} */
 		for (count = 0; count < total_sensor_readings ; count++){
-			fprintf(stdout, "TIMER[%d]: %02x%02x\n.", count, BUFFER[2*count], BUFFER[2*count+1]);
+			fprintf(stdout, "TIMER[%d]: 0x%02x%02x\n", count, BUFFER[2*count], BUFFER[2*count+1]);
 		}
 	}
 	return 0;
 }
 
 int main(int argc, char ** argv){
-	struct termios old_config, new_config;
 
 	int write_success = 0;
 	int read_success = 0;
@@ -155,10 +166,16 @@ int main(int argc, char ** argv){
 		return(EXIT_FAILURE);
 	}
 
+	signal(SIGINT, closeFD);
 	cfmakeraw(&new_config);
-	new_config.c_cc[VMIN] = 1;
 	cfsetspeed(&new_config, BAUD_RATE);
+	new_config.c_cc[VMIN] = 1;
+	new_config.c_cc[VTIME] = 0;
 
+	tcsetattr(FD, TCSANOW | TCIOFLUSH, &new_config);
+//	sleep(2);
+//	tcflush(FD, TCIOFLUSH);
+//	sleep(2);
 	if (SINGLE_CONFIG_MODE == 1){
 		//Sending config to micro controller
 		BUFFER[0] = 0x01;
@@ -186,13 +203,14 @@ int main(int argc, char ** argv){
 		fprintf(stdout, "%d byte(s) were written.\n", write_success);
 
 	//Reading serial port for acknowledgement 
+	tcflush(FD, TCIOFLUSH);
 	read_success = read(FD, BUFFER, 1);
 	if (read_success<0){
 		fprintf(stderr, "Error: %s\n", strerror(errno));
 	}
 	else{
 		if(BUFFER[0] != 0x12){
-			fprintf(stderr, "No acknowledgement recevied [%02x].\n", BUFFER[0]);
+			fprintf(stderr, "No acknowledgement recevied [%02x]\n", BUFFER[0]);
 		}
 		else{
 			fprintf(stdout, "Acknowledgement received.\n");
