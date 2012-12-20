@@ -19,7 +19,7 @@ unsigned char SINGLE_CONFIG_MODE = 1; //Single config sent or multiple from a fi
 
 unsigned char SEND_CONFIG[2] = {'\0','\0'};
 
-const char * OPT_STRING="b:c:C:fh";
+const char * OPT_STRING="b:c:C:fdh";
 
 unsigned char BUFFER[40];
 int BUFFER_COUNT =0;
@@ -28,6 +28,7 @@ int TOTAL_CONFIG = 0;
 struct termios old_config, new_config;
 
 unsigned char READ_UNTIL_SIGINT = 0;
+unsigned char HEXDUMP_MODE = 0;
 
 void display_help(){
 	fprintf(stdout, "USAGE: ultrasonic_tester [OPTION]... [SERIAL DEVICE FILE NAME]\n");
@@ -35,6 +36,7 @@ void display_help(){
 	fprintf(stdout, "\t-c CONFIG\t Set the configuration in HEX format.\n");
 	fprintf(stdout, "\t-C FILE\t\t Set the configuration input file.\n");
 	fprintf(stdout, "\t-f\t\t Read until SIGINT received.\n");
+	fprintf(stdout, "\t-d\t\t Display the hexdump without any parsing.\n");
 	fprintf(stdout, "\t-h\t\t Display this message.\n");
 }
 void closeFD(int signo){
@@ -91,6 +93,9 @@ int parse_input(int argc, char ** argv) {
 				break;
 			case 'f':
 				READ_UNTIL_SIGINT = 1;
+				break;
+			case 'd':
+				HEXDUMP_MODE = 1;
 				break;
 			case 'h':
 			default:
@@ -236,6 +241,19 @@ int main(int argc, char ** argv){
 
 	//Reading serial port for acknowledgement 
 	tcflush(FD, TCIOFLUSH);
+	if (HEXDUMP_MODE==1){
+		while(1){
+			read_success=read(FD, BUFFER, 1);
+			if(read_success<0){
+				fprintf(stderr, "Error: %s\n", strerror(errno));
+				raise(SIGINT);
+			}
+			else{
+				fprintf(stdout,"0x%02x|", BUFFER[0]);
+			}
+		}
+	}
+
 	read_success = read(FD, BUFFER, 1);
 	if (read_success<0){
 		fprintf(stderr, "Error: %s\n", strerror(errno));
