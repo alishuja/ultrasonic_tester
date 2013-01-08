@@ -188,7 +188,7 @@ int main(int argc, char ** argv){
 		display_help();
 		return(EXIT_FAILURE);
 	}
-	FD = open(DEVICE_FILENAME, O_RDWR);
+	FD = open(DEVICE_FILENAME, O_RDWR | O_NOCTTY | O_SYNC);
 	if (FD ==-1){
 		fprintf(stderr, "Error: %s\n", strerror(errno));
 		return(EXIT_FAILURE);
@@ -205,14 +205,12 @@ int main(int argc, char ** argv){
 
 	signal(SIGINT, closeFD);
 	cfmakeraw(&new_config);
+//	new_config.c_cc[VMIN] = 1;
+//	new_config.c_cc[VTIME] = 0;
 	cfsetspeed(&new_config, BAUD_RATE);
-	new_config.c_cc[VMIN] = 1;
-	new_config.c_cc[VTIME] = 0;
-
-	tcsetattr(FD, TCSANOW | TCIOFLUSH, &new_config);
-	//	sleep(2);
-	//	tcflush(FD, TCIOFLUSH);
-	//	sleep(2);
+	tcsetattr(FD, TCSANOW, &new_config);
+	tcsetattr(FD, TCSAFLUSH, &new_config);
+	sleep(4);
 	if (SINGLE_CONFIG_MODE == 1){
 		//Sending config to micro controller
 		BUFFER[0] = 0x01;
@@ -239,8 +237,9 @@ int main(int argc, char ** argv){
 	else
 		fprintf(stdout, "%d byte(s) were written.\n", write_success);
 
+	tcdrain(FD);
+	usleep (250000);
 	//Reading serial port for acknowledgement 
-	tcflush(FD, TCIOFLUSH);
 	if (HEXDUMP_MODE==1){
 		while(1){
 			read_success=read(FD, BUFFER, 1);
